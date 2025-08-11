@@ -104,7 +104,7 @@ export default class GameScene extends Phaser.Scene {
     this.applyFrictionToPuck(dtSec);
 
     // Stuck detection and recovery
-    const speed = this.puck.body.velocity.length();
+    const speed = (this.puck.body as Phaser.Physics.Arcade.Body).velocity.length();
     if (speed < this.minSpeed) {
       this.puckStuckMs += delta;
       if (this.puckStuckMs > this.resetAfterMs) {
@@ -116,8 +116,8 @@ export default class GameScene extends Phaser.Scene {
       } else if (this.puckStuckMs > this.nudgeAfterMs) {
         // Soft nudge
         const angle = Phaser.Math.FloatBetween(-Math.PI, Math.PI);
-        this.puck.body.velocity.x += Math.cos(angle) * 60;
-        this.puck.body.velocity.y += Math.sin(angle) * 60;
+        (this.puck.body as Phaser.Physics.Arcade.Body).velocity.x += Math.cos(angle) * 60;
+        (this.puck.body as Phaser.Physics.Arcade.Body).velocity.y += Math.sin(angle) * 60;
       }
     } else {
       this.puckStuckMs = 0;
@@ -193,10 +193,10 @@ export default class GameScene extends Phaser.Scene {
 
   private applyFrictionToPuck(dtSec: number) {
     const retention = Math.pow(this.frictionRetentionPerSecond, dtSec);
-    this.puck.body.velocity.scale(retention);
+    (this.puck.body as Phaser.Physics.Arcade.Body).velocity.scale(retention);
     // Clamp tiny velocities to zero to prevent jitter
-    if (this.puck.body.velocity.lengthSq() < this.minSpeed * this.minSpeed * 0.25) {
-      this.puck.body.velocity.set(0, 0);
+    if ((this.puck.body as Phaser.Physics.Arcade.Body).velocity.lengthSq() < this.minSpeed * this.minSpeed * 0.25) {
+      (this.puck.body as Phaser.Physics.Arcade.Body).velocity.set(0, 0);
     }
   }
 
@@ -206,11 +206,11 @@ export default class GameScene extends Phaser.Scene {
     // Project slightly onto collision direction to reduce side-spin artifacts
     const dir = new Phaser.Math.Vector2(this.puck.x - this.playerPaddle.x, this.puck.y - this.playerPaddle.y).normalize();
     const along = dir.scale(Phaser.Math.Clamp(impulse.dot(dir), -600, 600));
-    this.puck.body.velocity.add(impulse.scale(0.3)).add(along);
+    (this.puck.body as Phaser.Physics.Arcade.Body).velocity.add(impulse.scale(0.3)).add(along);
     // Limit max speed to keep control
     const maxSpeed = 900;
-    if (this.puck.body.velocity.lengthSq() > maxSpeed * maxSpeed) {
-      this.puck.body.velocity.setLength(maxSpeed);
+    if ((this.puck.body as Phaser.Physics.Arcade.Body).velocity.lengthSq() > maxSpeed * maxSpeed) {
+      (this.puck.body as Phaser.Physics.Arcade.Body).velocity.setLength(maxSpeed);
     }
   };
 

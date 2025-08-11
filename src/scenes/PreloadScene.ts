@@ -19,7 +19,7 @@ export default class PreloadScene extends Phaser.Scene {
 
   private createCircleTexture(key: string, radius: number, color: number) {
     const size = radius * 2;
-    const g = this.make.graphics({ x: 0, y: 0, add: false });
+    const g = this.make.graphics({ x: 0, y: 0, add: false } as any);
     g.fillStyle(color, 1);
     g.fillCircle(radius, radius, radius);
     g.lineStyle(2, 0xffffff, 0.15);
@@ -29,7 +29,7 @@ export default class PreloadScene extends Phaser.Scene {
   }
 
   private createRoundedRect(key: string, w: number, h: number, r: number, color: number) {
-    const g = this.make.graphics({ x: 0, y: 0, add: false });
+    const g = this.make.graphics({ x: 0, y: 0, add: false } as any);
     g.fillStyle(color, 1);
     g.fillRoundedRect(0, 0, w, h, r);
     g.lineStyle(2, 0xffffff, 0.08);
@@ -38,4 +38,3 @@ export default class PreloadScene extends Phaser.Scene {
     g.destroy();
   }
 }
-
