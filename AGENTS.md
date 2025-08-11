@@ -23,9 +23,14 @@
 - Running: `npm run test` (add `--watch` for TDD). Aim for meaningful tests over raw coverage.
 
 ## Commit & Pull Request Guidelines
-- Commits: Use Conventional Commits, e.g., `feat: add puck friction`, `fix: clamp paddle to zone`, `chore: configure vite aliases`.
-- PRs: One focused change per PR. Include: purpose, screenshots/GIFs if UI, steps to test, and references to issues.
-- Checks: Ensure build and tests pass locally. Run lint/format.
+- Commits: Use Conventional Commits and commit after each milestone. Examples:
+  - `feat(m0): scaffold Vite + TS + Phaser`
+  - `feat(m1): add scenes and flow`
+  - `feat(m2): procedural field rendering`
+  - `feat(m3): paddle input with zone clamp`
+- Granularity: Within a milestone, prefer small, logical commits; do not rewrite history unless explicitly requested.
+- PRs: One focused change per PR. Include purpose, screenshots/GIFs (if UI), steps to test, and linked issues.
+- Checks: Ensure `npm run build` and tests pass; run lint/format before pushing.
 
 ## Security & Configuration Tips
 - Do not commit secrets. This is a static client; keep server keys out of the repo.
