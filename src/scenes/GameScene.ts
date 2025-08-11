@@ -268,7 +268,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     // Reset puck and start short countdown; pause timer
-    const dirY = scoredBy === 'player' ? 1 : -1; // opponent conceded -> serve up; player conceded -> serve down
+    const dirY = scoredBy === 'player' ? -1 : 1; // opponent conceded -> serve up; player conceded -> serve down
     this.startCountdownAndServe(dirY);
   }
 
