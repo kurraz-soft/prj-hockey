@@ -239,6 +239,7 @@ export default class GameScene extends Phaser.Scene {
     if ((this.puck.body as Phaser.Physics.Arcade.Body).velocity.lengthSq() > maxSpeed * maxSpeed) {
       (this.puck.body as Phaser.Physics.Arcade.Body).velocity.setLength(maxSpeed);
     }
+    playHit();
   };
 
   private checkGoal() {

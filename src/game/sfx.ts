@@ -25,12 +25,11 @@ function beep(freq: number, durationMs: number, gain = 0.03) {
 }
 
 export function playHit() {
-  // Short, higher pitch
-  beep(560, 60, 0.025);
+  // Short, higher pitch — louder
+  beep(560, 70, 0.09);
 }
 
 export function playGoal() {
-  // Slightly lower, longer
-  beep(300, 140, 0.035);
+  // Slightly lower, longer — louder
+  beep(300, 160, 0.09);
 }
-
