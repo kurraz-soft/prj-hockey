@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { computeFieldGeometry, type FieldGeometry } from '@/game/geometry';
 import { createPaddle, createPuck } from '@/game/entities';
+import { playHit, playGoal } from '@/game/sfx';
 
 export default class GameScene extends Phaser.Scene {
   private playerPaddle!: Phaser.Physics.Arcade.Image;
@@ -31,6 +32,8 @@ export default class GameScene extends Phaser.Scene {
   // M6 AI settings
   private readonly aiMaxSpeed = 520; // px/s
   private readonly aiLeadSeconds = 0.12; // predict puck X
+  // M7 Pause
+  private paused = false;
 
   constructor() {
     super('Game');
@@ -76,6 +79,13 @@ export default class GameScene extends Phaser.Scene {
       this.playerTarget.set(pointer.worldX, pointer.worldY);
     });
 
+    // Pause/Resume/Restart events from HUD
+    this.game.events.on('game:togglePause', () => this.togglePause());
+    this.game.events.on('game:pause', () => this.setPaused(true));
+    this.game.events.on('game:resume', () => this.setPaused(false));
+    this.game.events.on('game:restart', () => this.restartMatch());
+    this.game.events.on('game:quit', () => this.quitToMenu());
+
     // Initialize HUD
     this.game.events.emit('score:update', this.playerScore, this.opponentScore);
     this.game.events.emit('timer:update', this.timeLeftSec);
@@ -85,7 +95,11 @@ export default class GameScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number): void {
-    // Pause gameplay effects during reset or after match end
+    // Pause gameplay effects during manual pause, reset, or after match end
+    if (this.paused) {
+      return;
+    }
+
     if (!this.playing) {
       // Allow paddles to still move toward targets even when not playing
       this.followPointer(delta);
@@ -252,6 +266,7 @@ export default class GameScene extends Phaser.Scene {
     if (this.inReset) return;
     if (scoredBy === 'player') this.playerScore += 1; else this.opponentScore += 1;
     this.game.events.emit('score:update', this.playerScore, this.opponentScore);
+    playGoal();
 
     // Check score-limit win
     if (this.playerScore >= this.scoreLimit || this.opponentScore >= this.scoreLimit) {
@@ -377,5 +392,42 @@ export default class GameScene extends Phaser.Scene {
     if ((this.puck.body as Phaser.Physics.Arcade.Body).velocity.lengthSq() > maxSpeed * maxSpeed) {
       (this.puck.body as Phaser.Physics.Arcade.Body).velocity.setLength(maxSpeed);
     }
+    playHit();
   };
+
+  private togglePause() { this.setPaused(!this.paused); }
+  private setPaused(flag: boolean) {
+    if (this.paused === flag) return;
+    this.paused = flag;
+    this.physics.world.isPaused = flag;
+    this.game.events.emit('hud:paused', this.paused);
+  }
+
+  private restartMatch() {
+    // Reset state
+    this.playerScore = 0;
+    this.opponentScore = 0;
+    this.timeLeftSec = this.matchLengthSec;
+    this.playing = true;
+    this.inReset = false;
+    this.paused = false;
+    this.physics.world.isPaused = false;
+    this.puckStuckMs = 0;
+    // Reset positions
+    const cx = this.scale.width / 2;
+    const bottomY = this.fieldGeom.playY + this.fieldGeom.playHeight - 100;
+    const topY = this.fieldGeom.playY + 100;
+    this.playerPaddle.setPosition(cx, bottomY);
+    this.opponentPaddle.setPosition(cx, topY);
+    this.puck.setPosition(cx, this.scale.height / 2);
+    this.puck.setVelocity(160, -120);
+    // HUD
+    this.game.events.emit('score:update', this.playerScore, this.opponentScore);
+    this.game.events.emit('timer:update', this.timeLeftSec);
+  }
+
+  private quitToMenu() {
+    this.scene.stop('Hud');
+    this.scene.start('Menu');
+  }
 }

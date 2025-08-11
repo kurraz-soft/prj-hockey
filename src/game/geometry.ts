@@ -25,7 +25,7 @@ export function computeFieldGeometry(
 
   const midY = playY + playHeight / 2;
 
-  const goalWidth = Math.round(playWidth * 0.35);
+  const goalWidth = Math.round(playWidth * .9); //Fix the goal line is the whole botom
   const gx1 = playX + (playWidth - goalWidth) / 2;
   const gx2 = gx1 + goalWidth;
 
