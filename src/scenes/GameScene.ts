@@ -16,6 +16,15 @@ export default class GameScene extends Phaser.Scene {
   private readonly nudgeAfterMs = 2000;
   private readonly resetAfterMs = 5000;
   private readonly frictionRetentionPerSecond = 0.985; // 98.5%/s
+  // M5 state
+  private playerScore = 0;
+  private opponentScore = 0;
+  private scoreLimit = 10;
+  private matchLengthSec = 3 * 60; // 3 minutes
+  private timeLeftSec = this.matchLengthSec;
+  private playing = true; // countdown pauses timer
+  private inReset = false;
+  private countdownEvent?: Phaser.Time.TimerEvent;
 
   constructor() {
     super('Game');
@@ -58,35 +67,38 @@ export default class GameScene extends Phaser.Scene {
       this.playerTarget.set(pointer.worldX, pointer.worldY);
     });
 
+    // Initialize HUD
+    this.game.events.emit('score:update', this.playerScore, this.opponentScore);
+    this.game.events.emit('timer:update', this.timeLeftSec);
+
     // Launch initial motion so the scene feels alive
     this.puck.setVelocity(160, -120);
   }
 
   update(time: number, delta: number): void {
+    // Pause gameplay effects during reset or after match end
+    if (!this.playing) {
+      // Allow paddle to still follow input even when not playing
+      this.followPointer(delta);
+      return;
+    }
+
+    // Timer countdown (pause during resets)
+    if (!this.inReset) {
+      const before = Math.ceil(this.timeLeftSec);
+      this.timeLeftSec = Math.max(0, this.timeLeftSec - delta / 1000);
+      const after = Math.ceil(this.timeLeftSec);
+      if (after !== before) {
+        this.game.events.emit('timer:update', after);
+      }
+      if (this.timeLeftSec <= 0) {
+        this.endMatch();
+        return;
+      }
+    }
+
     // Smooth follow towards target
-    const lerp = 0.25; // smoothing factor per frame
-    const targetX = Phaser.Math.Clamp(
-      this.playerTarget.x,
-      this.fieldGeom.playX + this.paddleRadius,
-      this.fieldGeom.playX + this.fieldGeom.playWidth - this.paddleRadius
-    );
-    const targetY = Phaser.Math.Clamp(
-      this.playerTarget.y,
-      this.fieldGeom.midY + this.paddleRadius,
-      this.fieldGeom.playY + this.fieldGeom.playHeight - this.paddleRadius
-    );
-
-    const nx = Phaser.Math.Linear(this.playerPaddle.x, targetX, lerp);
-    const ny = Phaser.Math.Linear(this.playerPaddle.y, targetY, lerp);
-    this.playerPaddle.setPosition(nx, ny);
-
-    // Derive paddle instantaneous velocity (px/sec)
-    const dtSec = Math.max(delta, 1) / 1000;
-    this.paddleVel.set(
-      (this.playerPaddle.x - this.paddlePrevPos.x) / dtSec,
-      (this.playerPaddle.y - this.paddlePrevPos.y) / dtSec
-    );
-    this.paddlePrevPos.set(this.playerPaddle.x, this.playerPaddle.y);
+    const dtSec = this.followPointer(delta);
 
     // Apply friction-like damping to the puck
     this.applyFrictionToPuck(dtSec);
@@ -110,6 +122,35 @@ export default class GameScene extends Phaser.Scene {
     } else {
       this.puckStuckMs = 0;
     }
+
+    // Goal detection using "fully crossed line" (center passes line by >= puck radius)
+    this.checkGoal();
+  }
+
+  // Returns dtSec
+  private followPointer(delta: number): number {
+    const lerp = 0.25; // smoothing factor per frame
+    const targetX = Phaser.Math.Clamp(
+      this.playerTarget.x,
+      this.fieldGeom.playX + this.paddleRadius,
+      this.fieldGeom.playX + this.fieldGeom.playWidth - this.paddleRadius
+    );
+    const targetY = Phaser.Math.Clamp(
+      this.playerTarget.y,
+      this.fieldGeom.midY + this.paddleRadius,
+      this.fieldGeom.playY + this.fieldGeom.playHeight - this.paddleRadius
+    );
+    const nx = Phaser.Math.Linear(this.playerPaddle.x, targetX, lerp);
+    const ny = Phaser.Math.Linear(this.playerPaddle.y, targetY, lerp);
+    this.playerPaddle.setPosition(nx, ny);
+    // Derive paddle instantaneous velocity (px/sec)
+    const dtSec = Math.max(delta, 1) / 1000;
+    this.paddleVel.set(
+      (this.playerPaddle.x - this.paddlePrevPos.x) / dtSec,
+      (this.playerPaddle.y - this.paddlePrevPos.y) / dtSec
+    );
+    this.paddlePrevPos.set(this.playerPaddle.x, this.playerPaddle.y);
+    return dtSec;
   }
 
   private drawField() {
@@ -172,4 +213,86 @@ export default class GameScene extends Phaser.Scene {
       this.puck.body.velocity.setLength(maxSpeed);
     }
   };
+
+  private checkGoal() {
+    const puckBody = this.puck.body as Phaser.Physics.Arcade.Body;
+    const puckRadius = puckBody.halfWidth; // body is circular
+    const x = this.puck.x;
+    const y = this.puck.y;
+    const { topGoal, bottomGoal, playY, playHeight } = this.fieldGeom;
+    const topLine = topGoal.y;
+    const bottomLine = playY + playHeight;
+    const withinMouth = (x >= topGoal.x1 && x <= topGoal.x2);
+    if (withinMouth) {
+      // Player scores on top goal when center fully crosses (y <= line + radius cannot happen due to bounds, so use <= line + radius)
+      if (y <= topLine + puckRadius) {
+        this.handleGoal('player');
+        return;
+      }
+      // Opponent scores on bottom goal when center crosses downwards
+      if (y >= bottomLine - puckRadius) {
+        this.handleGoal('opponent');
+        return;
+      }
+    }
+  }
+
+  private handleGoal(scoredBy: 'player' | 'opponent') {
+    if (this.inReset) return;
+    if (scoredBy === 'player') this.playerScore += 1; else this.opponentScore += 1;
+    this.game.events.emit('score:update', this.playerScore, this.opponentScore);
+
+    // Check score-limit win
+    if (this.playerScore >= this.scoreLimit || this.opponentScore >= this.scoreLimit) {
+      this.endMatch();
+      return;
+    }
+
+    // Reset puck and start short countdown; pause timer
+    this.inReset = true;
+    this.puck.setPosition(this.scale.width / 2, this.scale.height / 2);
+    this.puck.setVelocity(0, 0);
+    // 3..2..1 countdown
+    let remaining = 3;
+    this.game.events.emit('reset:countdown', remaining);
+    this.countdownEvent?.remove(false);
+    this.countdownEvent = this.time.addEvent({
+      delay: 1000,
+      repeat: 2,
+      callback: () => {
+        remaining -= 1;
+        this.game.events.emit('reset:countdown', remaining);
+        if (remaining <= 0) {
+          // Serve towards the side that conceded
+          const dirY = scoredBy === 'player' ? 1 : -1; // opponent conceded -> serve up; player conceded -> serve down
+          const angle = Phaser.Math.FloatBetween(-Math.PI / 6, Math.PI / 6);
+          const speed = 180;
+          this.puck.setVelocity(Math.sin(angle) * speed, dirY * Math.cos(angle) * speed);
+          this.inReset = false;
+        }
+      }
+    });
+  }
+
+  private endMatch() {
+    this.playing = false;
+    this.inReset = false;
+    this.countdownEvent?.remove(false);
+    this.puck.setVelocity(0, 0);
+    const result = this.playerScore === this.opponentScore
+      ? 'Draw!'
+      : this.playerScore > this.opponentScore
+      ? 'You Win!'
+      : 'You Lose!';
+    this.game.events.emit('match:over', result);
+
+    // Simple restart/quit handlers
+    const onPointer = () => {
+      // Restart to Menu for now
+      this.input.off('pointerdown', onPointer);
+      this.scene.stop('Hud');
+      this.scene.start('Menu');
+    };
+    this.input.on('pointerdown', onPointer);
+  }
 }
