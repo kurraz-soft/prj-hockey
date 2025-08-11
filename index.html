@@ -5,10 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Minimalist Air Hockey</title>
     <style>
-      html, body, #app { height: 100%; }
+      html, body, #app { height: 100%; width: 100%; }
+      * { box-sizing: border-box; }
       body { margin: 0; background: #0e0e12; color: #fff; }
-      #app { display: grid; place-items: center; }
-      canvas { display: block; }
+      /* Let Phaser's autoCenter handle centering; parent just fills viewport */
+      #app { position: relative; overflow: hidden; }
+      canvas { display: block; margin: 0; }
     </style>
   </head>
   <body>
@@ -16,4 +18,3 @@
     <script type="module" src="/src/main.ts"></script>
   </body>
   </html>
-
