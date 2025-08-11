@@ -2,6 +2,8 @@ import Phaser from 'phaser';
 import { computeFieldGeometry, type FieldGeometry } from '@/game/geometry';
 import { createPaddle, createPuck } from '@/game/entities';
 import { playHit, playGoal } from '@/game/sfx';
+import { detectGoal } from '@/game/rules';
+import { computeOpponentTarget } from '@/game/ai';
 
 export default class GameScene extends Phaser.Scene {
   private playerPaddle!: Phaser.Physics.Arcade.Image;
@@ -241,25 +243,8 @@ export default class GameScene extends Phaser.Scene {
 
   private checkGoal() {
     const puckBody = this.puck.body as Phaser.Physics.Arcade.Body;
-    const puckRadius = puckBody.halfWidth; // body is circular
-    const x = this.puck.x;
-    const y = this.puck.y;
-    const { topGoal, bottomGoal, playY, playHeight } = this.fieldGeom;
-    const topLine = topGoal.y;
-    const bottomLine = playY + playHeight;
-    const withinMouth = (x >= topGoal.x1 && x <= topGoal.x2);
-    if (withinMouth) {
-      // Player scores on top goal when center fully crosses (y <= line + radius cannot happen due to bounds, so use <= line + radius)
-      if (y <= topLine + puckRadius) {
-        this.handleGoal('player');
-        return;
-      }
-      // Opponent scores on bottom goal when center crosses downwards
-      if (y >= bottomLine - puckRadius) {
-        this.handleGoal('opponent');
-        return;
-      }
-    }
+    const side = detectGoal(this.puck.x, this.puck.y, puckBody.halfWidth, this.fieldGeom);
+    if (side) this.handleGoal(side);
   }
 
   private handleGoal(scoredBy: 'player' | 'opponent') {
@@ -326,24 +311,16 @@ export default class GameScene extends Phaser.Scene {
   private updateOpponentAI(deltaMs: number) {
     const dt = Math.max(deltaMs, 1) / 1000;
     const body = this.puck.body as Phaser.Physics.Arcade.Body;
-    // Predict puck X slightly into the future
-    const predictedX = this.puck.x + body.velocity.x * this.aiLeadSeconds;
-    const desiredX = Phaser.Math.Clamp(
-      predictedX,
-      this.fieldGeom.playX + this.paddleRadius,
-      this.fieldGeom.playX + this.fieldGeom.playWidth - this.paddleRadius
-    );
-    // Defensive Y: hold a line near mid, but approach puck when it's in top half
-    const defLine = this.fieldGeom.midY - 120;
-    let desiredY = defLine;
-    if (this.puck.y < this.fieldGeom.midY - 40) {
-      desiredY = Phaser.Math.Clamp(
-        this.puck.y,
-        this.fieldGeom.opponentZone.y + this.paddleRadius + 10,
-        this.fieldGeom.midY - this.paddleRadius - 40
-      );
-    }
-    this.opponentTarget.set(desiredX, desiredY);
+    const target = computeOpponentTarget({
+      puckX: this.puck.x,
+      puckY: this.puck.y,
+      velX: body.velocity.x,
+      velY: body.velocity.y,
+      geom: this.fieldGeom,
+      paddleRadius: this.paddleRadius,
+      leadSeconds: this.aiLeadSeconds
+    });
+    this.opponentTarget.set(target.x, target.y);
 
     // Move with capped speed
     const dx = this.opponentTarget.x - this.opponentPaddle.x;
