@@ -92,13 +92,20 @@ export default class GameScene extends Phaser.Scene {
     this.game.events.emit('score:update', this.playerScore, this.opponentScore);
     this.game.events.emit('timer:update', this.timeLeftSec);
 
-    // Launch initial motion so the scene feels alive
-    this.puck.setVelocity(160, -120);
+    // Start with a 3..2..1 countdown before first serve
+    // Randomize initial serve direction (up or down)
+    const initialDirY = Math.random() < 0.5 ? -1 : 1;
+    this.startCountdownAndServe(initialDirY);
   }
 
   update(time: number, delta: number): void {
     // Pause gameplay effects during manual pause, reset, or after match end
     if (this.paused) {
+      return;
+    }
+
+    // Lock paddles during reset countdown (3..2..1)
+    if (this.inReset) {
       return;
     }
 
@@ -261,10 +268,15 @@ export default class GameScene extends Phaser.Scene {
     }
 
     // Reset puck and start short countdown; pause timer
+    const dirY = scoredBy === 'player' ? 1 : -1; // opponent conceded -> serve up; player conceded -> serve down
+    this.startCountdownAndServe(dirY);
+  }
+
+  // Starts a 3..2..1 countdown, locks paddles, then serves from center
+  private startCountdownAndServe(dirY: 1 | -1) {
     this.inReset = true;
     this.puck.setPosition(this.scale.width / 2, this.scale.height / 2);
     this.puck.setVelocity(0, 0);
-    // 3..2..1 countdown
     let remaining = 3;
     this.game.events.emit('reset:countdown', remaining);
     this.countdownEvent?.remove(false);
@@ -275,8 +287,6 @@ export default class GameScene extends Phaser.Scene {
         remaining -= 1;
         this.game.events.emit('reset:countdown', remaining);
         if (remaining <= 0) {
-          // Serve towards the side that conceded
-          const dirY = scoredBy === 'player' ? 1 : -1; // opponent conceded -> serve up; player conceded -> serve down
           const angle = Phaser.Math.FloatBetween(-Math.PI / 6, Math.PI / 6);
           const speed = 180;
           this.puck.setVelocity(Math.sin(angle) * speed, dirY * Math.cos(angle) * speed);
