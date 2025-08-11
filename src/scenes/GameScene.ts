@@ -387,8 +387,8 @@ export default class GameScene extends Phaser.Scene {
     this.timeLeftSec = this.matchLengthSec;
     this.playing = true;
     this.inReset = false;
-    this.paused = false;
-    this.physics.world.isPaused = false;
+    // Ensure pause overlay closes and physics resume
+    this.setPaused(false);
     this.puckStuckMs = 0;
     // Reset positions
     const cx = this.scale.width / 2;
