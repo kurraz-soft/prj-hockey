@@ -8,9 +8,12 @@ export default class GameScene extends Phaser.Scene {
   private puck!: Phaser.Physics.Arcade.Image;
   private fieldGeom!: FieldGeometry;
   private playerTarget!: Phaser.Math.Vector2;
+  private opponentTarget!: Phaser.Math.Vector2;
   private paddleRadius = 40; // matches procedural texture
   private paddlePrevPos!: Phaser.Math.Vector2;
   private paddleVel!: Phaser.Math.Vector2; // px/sec
+  private opponentPrevPos!: Phaser.Math.Vector2;
+  private opponentVel!: Phaser.Math.Vector2; // px/sec
   private puckStuckMs = 0;
   private readonly minSpeed = 12; // px/s nearly stopped
   private readonly nudgeAfterMs = 2000;
@@ -25,6 +28,9 @@ export default class GameScene extends Phaser.Scene {
   private playing = true; // countdown pauses timer
   private inReset = false;
   private countdownEvent?: Phaser.Time.TimerEvent;
+  // M6 AI settings
+  private readonly aiMaxSpeed = 520; // px/s
+  private readonly aiLeadSeconds = 0.12; // predict puck X
 
   constructor() {
     super('Game');
@@ -57,12 +63,15 @@ export default class GameScene extends Phaser.Scene {
 
     // Groups and collisions (behavior tuning in later milestones)
     this.physics.add.collider(this.puck, this.playerPaddle, this.transferPaddleImpulse, undefined, this);
-    this.physics.add.collider(this.puck, this.opponentPaddle);
+    this.physics.add.collider(this.puck, this.opponentPaddle, this.transferOpponentImpulse, undefined, this);
 
     // Basic input: move player paddle to pointer (constraints in M3)
     this.playerTarget = new Phaser.Math.Vector2(this.playerPaddle.x, this.playerPaddle.y);
+    this.opponentTarget = new Phaser.Math.Vector2(this.opponentPaddle.x, this.opponentPaddle.y);
     this.paddlePrevPos = new Phaser.Math.Vector2(this.playerPaddle.x, this.playerPaddle.y);
     this.paddleVel = new Phaser.Math.Vector2();
+    this.opponentPrevPos = new Phaser.Math.Vector2(this.opponentPaddle.x, this.opponentPaddle.y);
+    this.opponentVel = new Phaser.Math.Vector2();
     this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
       this.playerTarget.set(pointer.worldX, pointer.worldY);
     });
@@ -78,8 +87,9 @@ export default class GameScene extends Phaser.Scene {
   update(time: number, delta: number): void {
     // Pause gameplay effects during reset or after match end
     if (!this.playing) {
-      // Allow paddle to still follow input even when not playing
+      // Allow paddles to still move toward targets even when not playing
       this.followPointer(delta);
+      this.updateOpponentAI(delta);
       return;
     }
 
@@ -99,6 +109,7 @@ export default class GameScene extends Phaser.Scene {
 
     // Smooth follow towards target
     const dtSec = this.followPointer(delta);
+    this.updateOpponentAI(delta);
 
     // Apply friction-like damping to the puck
     this.applyFrictionToPuck(dtSec);
@@ -295,4 +306,76 @@ export default class GameScene extends Phaser.Scene {
     };
     this.input.on('pointerdown', onPointer);
   }
+
+  // --- AI Bot (M6) ---
+  private updateOpponentAI(deltaMs: number) {
+    const dt = Math.max(deltaMs, 1) / 1000;
+    const body = this.puck.body as Phaser.Physics.Arcade.Body;
+    // Predict puck X slightly into the future
+    const predictedX = this.puck.x + body.velocity.x * this.aiLeadSeconds;
+    const desiredX = Phaser.Math.Clamp(
+      predictedX,
+      this.fieldGeom.playX + this.paddleRadius,
+      this.fieldGeom.playX + this.fieldGeom.playWidth - this.paddleRadius
+    );
+    // Defensive Y: hold a line near mid, but approach puck when it's in top half
+    const defLine = this.fieldGeom.midY - 120;
+    let desiredY = defLine;
+    if (this.puck.y < this.fieldGeom.midY - 40) {
+      desiredY = Phaser.Math.Clamp(
+        this.puck.y,
+        this.fieldGeom.opponentZone.y + this.paddleRadius + 10,
+        this.fieldGeom.midY - this.paddleRadius - 40
+      );
+    }
+    this.opponentTarget.set(desiredX, desiredY);
+
+    // Move with capped speed
+    const dx = this.opponentTarget.x - this.opponentPaddle.x;
+    const dy = this.opponentTarget.y - this.opponentPaddle.y;
+    const dist = Math.hypot(dx, dy);
+    const maxStep = this.aiMaxSpeed * dt;
+    if (dist > 0) {
+      if (dist > maxStep) {
+        const nx = dx / dist;
+        const ny = dy / dist;
+        this.opponentPaddle.setPosition(this.opponentPaddle.x + nx * maxStep, this.opponentPaddle.y + ny * maxStep);
+      } else {
+        this.opponentPaddle.setPosition(this.opponentTarget.x, this.opponentTarget.y);
+      }
+    }
+
+    // Clamp to opponent zone (safety)
+    const xClamped = Phaser.Math.Clamp(
+      this.opponentPaddle.x,
+      this.fieldGeom.playX + this.paddleRadius,
+      this.fieldGeom.playX + this.fieldGeom.playWidth - this.paddleRadius
+    );
+    const yClamped = Phaser.Math.Clamp(
+      this.opponentPaddle.y,
+      this.fieldGeom.opponentZone.y + this.paddleRadius,
+      this.fieldGeom.midY - this.paddleRadius
+    );
+    if (xClamped !== this.opponentPaddle.x || yClamped !== this.opponentPaddle.y) {
+      this.opponentPaddle.setPosition(xClamped, yClamped);
+    }
+
+    // Update opponent instantaneous velocity
+    this.opponentVel.set(
+      (this.opponentPaddle.x - this.opponentPrevPos.x) / dt,
+      (this.opponentPaddle.y - this.opponentPrevPos.y) / dt
+    );
+    this.opponentPrevPos.set(this.opponentPaddle.x, this.opponentPaddle.y);
+  }
+
+  private transferOpponentImpulse = () => {
+    const impulse = this.opponentVel.clone().scale(0.45);
+    const dir = new Phaser.Math.Vector2(this.puck.x - this.opponentPaddle.x, this.puck.y - this.opponentPaddle.y).normalize();
+    const along = dir.scale(Phaser.Math.Clamp(impulse.dot(dir), -600, 600));
+    (this.puck.body as Phaser.Physics.Arcade.Body).velocity.add(impulse.scale(0.3)).add(along);
+    const maxSpeed = 900;
+    if ((this.puck.body as Phaser.Physics.Arcade.Body).velocity.lengthSq() > maxSpeed * maxSpeed) {
+      (this.puck.body as Phaser.Physics.Arcade.Body).velocity.setLength(maxSpeed);
+    }
+  };
 }
