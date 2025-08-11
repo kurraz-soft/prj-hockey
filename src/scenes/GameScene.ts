@@ -1,11 +1,14 @@
 import Phaser from 'phaser';
 import { computeFieldGeometry, type FieldGeometry } from '@/game/geometry';
+import { createPaddle, createPuck } from '@/game/entities';
 
 export default class GameScene extends Phaser.Scene {
   private playerPaddle!: Phaser.Physics.Arcade.Image;
   private opponentPaddle!: Phaser.Physics.Arcade.Image;
   private puck!: Phaser.Physics.Arcade.Image;
   private fieldGeom!: FieldGeometry;
+  private playerTarget!: Phaser.Math.Vector2;
+  private paddleRadius = 40; // matches procedural texture
 
   constructor() {
     super('Game');
@@ -31,26 +34,41 @@ export default class GameScene extends Phaser.Scene {
     const bottomY = this.fieldGeom.playY + this.fieldGeom.playHeight - 100;
     const topY = this.fieldGeom.playY + 100;
 
-    this.playerPaddle = this.physics.add.image(cx, bottomY, 'paddle');
-    this.playerPaddle.setImmovable(true);
-
-    this.opponentPaddle = this.physics.add.image(cx, topY, 'paddle');
-    this.opponentPaddle.setImmovable(true).setTint(0x94a3b8);
-
-    this.puck = this.physics.add.image(cx, this.scale.height / 2, 'puck');
-    this.puck.setCollideWorldBounds(true, 1, 1);
+    this.playerPaddle = createPaddle(this, cx, bottomY);
+    this.opponentPaddle = createPaddle(this, cx, topY, 'paddle', 0x94a3b8);
+    this.puck = createPuck(this, cx, this.scale.height / 2);
 
     // Groups and collisions (behavior tuning in later milestones)
     this.physics.add.collider(this.puck, this.playerPaddle);
     this.physics.add.collider(this.puck, this.opponentPaddle);
 
     // Basic input: move player paddle to pointer (constraints in M3)
+    this.playerTarget = new Phaser.Math.Vector2(this.playerPaddle.x, this.playerPaddle.y);
     this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
-      this.playerPaddle.setPosition(pointer.worldX, pointer.worldY);
+      this.playerTarget.set(pointer.worldX, pointer.worldY);
     });
 
     // Launch a tiny motion so the scene feels alive (remove/tune later)
     this.puck.setVelocity(40, -30);
+  }
+
+  update(time: number, delta: number): void {
+    // Smooth follow towards target
+    const lerp = 0.25; // smoothing factor per frame
+    const targetX = Phaser.Math.Clamp(
+      this.playerTarget.x,
+      this.fieldGeom.playX + this.paddleRadius,
+      this.fieldGeom.playX + this.fieldGeom.playWidth - this.paddleRadius
+    );
+    const targetY = Phaser.Math.Clamp(
+      this.playerTarget.y,
+      this.fieldGeom.midY + this.paddleRadius,
+      this.fieldGeom.playY + this.fieldGeom.playHeight - this.paddleRadius
+    );
+
+    const nx = Phaser.Math.Linear(this.playerPaddle.x, targetX, lerp);
+    const ny = Phaser.Math.Linear(this.playerPaddle.y, targetY, lerp);
+    this.playerPaddle.setPosition(nx, ny);
   }
 
   private drawField() {
